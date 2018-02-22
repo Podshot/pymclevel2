@@ -23,10 +23,10 @@ class TestChunk(unittest.TestCase):
     def test_blocks(self):
         self.assertEqual(str(self.chunk.Blocks[0,0,0]), 'minecraft:bedrock')
 
-        with self.assertRaises(NotImplementedError):
-            self.chunk.Blocks[0,16,0]
-        with self.assertRaises(NotImplementedError):
-            self.chunk.Blocks[1,1,1] = 'minecraft:stone'
+    @unittest.expectedFailure
+    def test_modification(self):
+        self.chunk.Blocks[1,10,1] = 'minecraft:gold_block'
+        self.assertEqual(self.chunk.Blocks[1,10,1], 'minecraft:gold_block')
 
 class TestSections(unittest.TestCase):
 
@@ -45,16 +45,16 @@ class TestSections(unittest.TestCase):
         self.assertEqual(len(self.chunk.Sections), 1)
         self.assertEqual(str(self.chunk.Sections[0].blocks[0,0,0]), 'minecraft:bedrock') # Still working on Blockstate class, use str comparison for now
 
-        with self.assertRaises(NotImplementedError):
-            self.chunk.Blocks[0, 16, 0]
-        with self.assertRaises(NotImplementedError):
-            self.chunk.Blocks[1, 1, 1] = 'minecraft:stone'
-
     def test_palette(self):
         self.assertEqual(str(self.chunk.Sections[0].palette[1]), 'minecraft:bedrock')
         self.assertEqual(self.chunk.Sections[0].palette['minecraft:bedrock'], 1)
         self.assertEqual(self.chunk.Sections[0].palette['minecraft:air'], 0)
         self.assertEqual(self.chunk.Sections[0].palette['minecraft:grass_block[snowy=false]'], 3)
+
+    @unittest.expectedFailure
+    def test_modification(self):
+        self.section.Blocks[1, 10, 1] = 'minecraft:gold_block'
+        self.assertEqual(self.section.Blocks[1, 10, 1], 'minecraft:gold_block')
 
 
 def setup_suite():
