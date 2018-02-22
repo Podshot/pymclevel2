@@ -1,0 +1,6 @@
+# Directories
+.idea/
+rendering/
+
+# Files
+*.py[cod]
