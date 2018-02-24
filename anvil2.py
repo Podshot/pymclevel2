@@ -3,6 +3,7 @@ import os
 import struct
 import zlib
 import numpy as np
+import cPickle
 
 import nbt
 
@@ -33,43 +34,13 @@ def decodeBlockstateArray(array):
     return return_value
 
 def encodeBlockstateArray(array):
-    def egcd(a, b):
-        if a == 0:
-            return (b, 0, 1)
-        else:
-            g, y, x = egcd(b % a, a)
-            return (g, x - (b // a) * y, y)
-
-    def modinv(a, m):
-        g, x, y = egcd(a, m)
-        if g != 1:
-            raise Exception('modular inverse does not exist')
-        else:
-            return x % m
-
     return_value = [0] * 4096
-    bit_per_index = len(array) * 64/ 4096
-    current_reference_index = 0
-
-    for i in xrange(len(array)):
-        current = array[i]
-
-        overhang = modinv(bit_per_index - modinv(64 * i, bit_per_index), bit_per_index)
-        if overhang > 0:
-            return_value[current_reference_index - 1] |= modinv(current, ((1 << overhang) << (bit_per_index - overhang)))
-        current >>= overhang
-
-        remaining_bits = 64 - overhang
-        for j in xrange((remaining_bits + (bit_per_index - modinv(modinv(remaining_bits, bit_per_index), bit_per_index) / bit_per_index))):
-            return_value[current_reference_index] = modinv(current, (1 << bit_per_index))
-            current_reference_index += 1
-            current >>=bit_per_index
-
-    return return_value
+    bit_per_index = max(4, 6)
 
 class Blockstate(object):
 
-    _block_state_map = {}
+   # _block_state_map = {}
+    __comp_attributes = ('_resource_location', '_basename', '_properties')
 
     def __init__(self, resource_location='minecraft', basename='air', properties=None):
         self._resource_location = resource_location
@@ -79,10 +50,27 @@ class Blockstate(object):
         else:
             self._properties = properties = {}
         self._str = Blockstate.__buildStr(resource_location, basename, properties)
-        self._block_state_map[self._str] = self
+        #self._block_state_map[self._str] = self
 
     def __repr__(self):
         return self._str
+
+    def __eq__(self, other):
+        if isinstance(other, Blockstate):
+            result = True
+            for attr in self.__comp_attributes:
+                result = result and getattr(other, attr) == getattr(self, attr)
+            return result
+        elif isinstance(other, (str, unicode)):
+            return other == self._str
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        if result is NotImplemented:
+            return result
+        return not result
 
     def toNBT(self):
         root = nbt.TAG_Compound()
@@ -133,8 +121,8 @@ class Blockstate(object):
         resource, base = nbt_data['Name'].value.split(':')
         props = {key:value.value for (key, value) in nbt_data.get('Properties', {}).iteritems()}
         built = Blockstate.__buildStr(resource, base, props)
-        if built in cls._block_state_map:
-            return cls._block_state_map[built]
+        #if built in cls._block_state_map:
+        #    return cls._block_state_map[built]
         return cls(resource, base, props)
 
     @classmethod
@@ -142,14 +130,14 @@ class Blockstate(object):
         if not properties:
             properties = {}
         built = Blockstate.__buildStr(resource, basename, properties)
-        if built in cls._block_state_map:
-            return cls._block_state_map[built]
+        #if built in cls._block_state_map:
+        #    return cls._block_state_map[built]
         return cls(resource, basename, properties)
 
-    @classmethod
-    def getBlockstateFromStr(cls, string):
-        if string in cls._block_state_map:
-            return cls._block_state_map[string]
+    #@classmethod
+    #def getBlockstateFromStr(cls, string):
+        #if string in cls._block_state_map:
+        #    return cls._block_state_map[string]
         #return cls()
 
 class BlockstateRegionFile(object):
@@ -274,10 +262,22 @@ class BlockstateChunk(object):
         self._biomes = nbt_data['Level']['Biomes'].value
         self._height_map = nbt_data['Level']['HeightMap'].value
         self._sections = {}
+        self._blocks = np.zeros((16,255,16), dtype=Blockstate)
+        self._total_palette = []
         for section in nbt_data['Level']['Sections']:
-            sect = BlockstateChunkSection(section)
+            sect = BlockstateChunkSection(self, section)
             self._sections[sect.Y] = sect
-        self._blocks = ChunkBlockWrapper(self._sections)
+            lower_bound = sect.Y << 4
+            upper_bound = (sect.Y + 1) << 4
+            self._blocks[:, lower_bound:upper_bound, :] = sect._blocks
+            for block in sect.palette:
+                if block not in self._total_palette:
+                    self._total_palette.append(block)
+        #print(self._blocks)
+        #self._blocks = ChunkBlockWrapper(self._sections)
+
+    def save(self):
+        raise NotImplementedError()
 
     @property
     def HeightMap(self):
@@ -311,74 +311,20 @@ class BlockstateChunk(object):
     def Blocks(self):
         return self._blocks
 
-class BlockstateArrayWrapper(object):
-
-    def __init__(self, base_array, palette):
-        self._base = base_array
-        self._palette = palette
-
-    def __getitem__(self, item):
-        index = self._base[item]
-        return Blockstate.getBlockstateFromNBT(self._palette[index])
-
-    def __setitem__(self, key, value):
-        #self._palette)
-        index = self._palette
-        #print(key, value)
-
-class PaletteArrayWrapper(object):
-
-    def __init__(self, palette):
-        self._palette = palette
-        #self._internal_palette = []
-        self._map = {}
-        self.convertToBlockstates()
-
-    def __getitem__(self, item):
-        if isinstance(item, int):
-            if item in self._map:
-                return self._map[item]
-            self._map[item] = block = Blockstate.getBlockstateFromNBT(self._palette[item])
-            return block
-        elif isinstance(item, (str, unicode)):
-            for (index, block) in self._map.iteritems():
-                if str(block) == item:
-                    return index
-            return -1
-
-    def convertToBlockstates(self):
-        for i in xrange(len(self._palette)):
-            self._map[i] = Blockstate.getBlockstateFromNBT(self._palette[i])
-
-    def converToNBT(self):
-        result = nbt.TAG_List()
-        for block in self._map.itervalues():
-            result.append(block.toNBT())
-        return result
-
-class ChunkBlockWrapper(object):
-
-    def __init__(self, sections):
-        self._sections = sections
-
-    def __getitem__(self, item):
-        x, y, z = item
-        sy = y >> 4
-        if sy >= len(self._sections):
-            raise NotImplementedError('Accessing non-existent Chunk sections is not supported yet!')
-        return self._sections[sy].Blocks[x,y,z]
-
-    def __setitem__(self, key, value):
-        raise NotImplementedError('Setting Blocks is not supported yet!')
+    @Blocks.getter
+    def get_Blocks(self):
+        return self._blocks
 
 class BlockstateChunkSection(object):
 
-    def __init__(self, data):
+    def __init__(self, parent, data):
+        self._parent = parent
         self._y = data['Y'].value
         self._block_light = data['BlockLight'].value
         self._sky_light = data['SkyLight'].value
         self._palette = data['Palette'].value
-        self.palette = PaletteArrayWrapper(self._palette)
+        self.palette = [Blockstate.getBlockstateFromNBT(nbt_data) for nbt_data in self._palette]
+        #self.palette = PaletteArrayWrapper(self._palette)
         #for blockstate in self._palette:
         #    Blockstate.getBlockstateFromNBT(blockstate)
 
@@ -392,8 +338,20 @@ class BlockstateChunkSection(object):
         temp_array = [long(int(n)) for n in temp_array]
         #print(temp_array)
         #print(decoded_states)
+        #print(encodeBlockstateArray(temp_array))
         #print('===', encoded_states == encodeBlockstateArray(temp_array))
-        self.blocks = BlockstateArrayWrapper(self._block_states, self._palette)
+
+        self._blocks = self._block_states.ravel().astype(object)
+        for i in xrange(len(self._palette)):
+            self._blocks[np.in1d(self._blocks, i)] = Blockstate.getBlockstateFromNBT(self._palette[i])
+        self._blocks = np.reshape(self._blocks, (16,16,16))
+
+    def recalculate_palette(self):
+        updated_palette = [self._parent.materials[0],]
+        for block in self._parent.materials:
+            if block in self._blocks and block != 'minecraft:air':
+                updated_palette.append(block)
+        self._palette = updated_palette
 
     @property
     def Y(self):
@@ -415,21 +373,67 @@ class BlockstateChunkSection(object):
     def __getBlocks(self, pos):
         return pos
 
+class BlockstateMaterials(object):
+
+    def __init__(self):
+        self.blockstates = []
+        self.load()
+
+    def load(self):
+        raise NotImplementedError()
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return self.blockstates[item]
+        elif isinstance(item, (str, unicode)):
+            for blockstate in self.blockstates:
+                if blockstate == item:
+                    return blockstate
+        elif isinstance(item, nbt.TAG_Compound):
+            return NotImplementedError()
+        return None
+
+
 if __name__ == '__main__':
     obj = BlockstateRegionFile('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World\\region\\r.0.0.mca')
+    obj2 = BlockstateRegionFile('C:\\Users\\gotharbg\\Downloads\\Podshot 1_13 Snapshot\\region\\r.0.0.mca')
 
     chunk = obj.getChunk(0,0)
-    print(chunk.TileEntities)
+    #print(chunk.Blocks[0,3,0])
+    #print(chunk.TileEntities)
     chunk.TileEntities.append({'test': 'value'})
-    print(chunk.TileEntities)
-    #print(chunk.Blocks[0,0,0])
-    print(chunk.Sections)
-    print(chunk.Sections[0]._block_states)
-    print(chunk.Sections[0].blocks[0,0,0])
-    chunk.Sections[0].blocks[0,0,0] = 10
-    print(chunk.Sections[0].palette[0])
-    print(chunk.Sections[0].palette['minecraft:dirt'])
-    print('Block:', chunk.Blocks[0,0,0])
-    print('Type', type(chunk.Sections[0].blocks[0,0,0]))
-    print('Block:', chunk.Blocks[0,16,0])
+    chunk2 = obj2.getChunk(0,0)
+    #print(chunk.TileEntities)
+    for i in xrange(16):
+        print(chunk.Blocks[:,i,1])
+
+    chunk.Blocks[1,0,1] = Blockstate.getBlockstateFromData('mod', 'mod_block')
+    print(chunk.Blocks[1,0,1])
+    no_block = Blockstate.getBlockstateFromData('minecraft', 'sponge')
+    print(no_block in chunk.Blocks)
+    print('minecraft:air' in chunk.Blocks)
+    print(chunk._total_palette)
+    print('===')
+    print(chunk2._total_palette)
+    #print(chunk.Sections)
+    #print(chunk.Sections[0]._block_states)
+    #print(chunk.Sections[0].blocks[0,0,0])
+    #chunk.Sections[0].blocks[0,0,0] = 10
+    #print(chunk.Sections[0].palette[0])
+    #print(chunk.Sections[0].palette['minecraft:dirt'])
+    #print('Block:', chunk.Blocks[0,0,0])
+    #print('Type', type(chunk.Sections[0].blocks[0,0,0]))
+    #print('Block:', chunk.Blocks[0,16,0])
+    #print('Slices:', chunk.Blocks[::2, ::2, :64])
+
+    fp = open('text.cPickle', 'rb')
+    data = cPickle.load(fp)
+    fp.close()
+    result = np.append(data, chunk.Sections[0]._block_states)
+    result = result.reshape((16, 32, 16))
+    #print(result.shape)
+    #print(result[0,0,0])
+    #print(result[0,15,0])
+    #print(chunk.Sections[0].blocks[0,0,0] == chunk.Blocks[0,1,0])
+    #print(chunk.Sections[0].blocks[0,0,0] == 'minecraft:bedrock')
 #print(Blockstate.getBlockstate())
