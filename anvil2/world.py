@@ -5,6 +5,8 @@ import json
 import os
 import struct
 import zlib
+from uuid import UUID
+
 import numpy as np
 import cPickle
 import glob
@@ -52,6 +54,22 @@ def encodeBlockstateArray(array):
         return num + 1
     return_value = [0] * 4096
     bit_per_index = max(4, 6)
+
+def TagProperty(tagName, tagType, default_or_func=None):
+    def getter(self):
+        if tagName not in self.root_tag["Data"]:
+            if hasattr(default_or_func, "__call__"):
+                default = default_or_func(self)
+            else:
+                default = default_or_func
+
+            self.root_tag["Data"][tagName] = tagType(default)
+        return self.root_tag["Data"][tagName].value
+
+    def setter(self, val):
+        self.root_tag["Data"][tagName] = tagType(value=val)
+
+    return property(getter, setter)
 
 class Blockstate(object):
 
@@ -158,6 +176,16 @@ class Blockstate(object):
 
 class BlockstateLevel(object):
 
+    SizeOnDisk = TagProperty('SizeOneDick', nbt.TAG_Long, 0)
+    RandomSeed = TagProperty('RandomSeed', nbt.TAG_Long, 0)
+    Time = TagProperty('Time', nbt.TAG_Long, 0)
+    DayTime = TagProperty('DayTime', nbt.TAG_Long, 0)
+    LastPlayed = TagProperty('LastPlayed', nbt.TAG_Long, lambda self: long(time.time() * 1000))
+    LevelName = TagProperty('LevelName', nbt.TAG_String, lambda self: self.displayName)
+    GeneratorName = TagProperty('generatorName', nbt.TAG_String, 'default')
+    MapFeatures = TagProperty('MapFeatures', nbt.TAG_Byte, 1)
+    GameType = TagProperty('GameType', nbt.TAG_Int, 0)
+
     def __init__(self, path):
         self.path = path
         self.players = []
@@ -180,6 +208,14 @@ class BlockstateLevel(object):
 
         self.preloadDimensions()
 
+    @classmethod
+    def gamePlatform(cls):
+        return 'Java'
+
+    @classmethod
+    def levelFormat(cls):
+        return 'anvil2'
+
     def acquireSessionLock(self):
         lock_file = os.path.join(self.path, 'session.lock')
         self.initTime = int(time.time() * 1000)
@@ -193,11 +229,17 @@ class BlockstateLevel(object):
 
     def loadLevelDat(self):
         self.root_tag = nbt.load(os.path.join(self.path, 'level.dat'))
-
-        raise NotImplementedError()
+        self.gameVersion = self.root_tag['Data']['Version'].get('Name', nbt.TAG_String('Unknown')).value
 
     def loadPlayers(self):
-        raise NotImplementedError()
+        players = os.listdir(os.path.join(self.path, 'playerdata'))
+        for p in players:
+            if p.endswith('.dat'):
+                try:
+                    UUID(p[:-4], version=4)
+                except ValueError:
+                    continue
+                self.players.append(p)
 
     def preloadDimensions(self):
         raise NotImplementedError()
