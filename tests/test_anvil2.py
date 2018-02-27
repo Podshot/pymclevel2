@@ -17,8 +17,6 @@ class TestChunk(unittest.TestCase):
 
     def test_types(self):
         self.assertIsInstance(self.chunk.Sections[0], anvil2.BlockstateChunkSection)
-        self.assertIsInstance(self.chunk.Sections[0].blocks, anvil2.BlockstateArrayWrapper)
-        self.assertIsInstance(self.chunk.Sections[0].palette, anvil2.PaletteArrayWrapper)
 
     def test_blocks(self):
         self.assertEqual(self.chunk.Blocks[0,0,0], 'minecraft:bedrock')

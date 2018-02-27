@@ -1,9 +1,15 @@
 from __future__ import unicode_literals, print_function
+
+import collections
+import json
 import os
 import struct
 import zlib
 import numpy as np
 import cPickle
+import glob
+
+import time
 
 import nbt
 
@@ -16,15 +22,19 @@ VERSION_DEFLATE = 2
 def decodeBlockstateArray(array):
     return_value = [0] * 4096
     bit_per_index = len(array) * 64 / 4096
+    print('Bit per Index', bit_per_index)
     current_reference_index = 0
 
     for i in xrange(len(array)):
         current = array[i]
 
         overhang = (bit_per_index - (64 * i) % bit_per_index) % bit_per_index
+        print('Overhang', overhang)
         if overhang > 0:
             return_value[current_reference_index - 1] |= current % ((1 << overhang) << (bit_per_index - overhang))
         current >>= overhang
+        print('Current', current)
+        print('Curr', current >> overhang)
 
         remaining_bits = 64 - overhang
         for j in xrange((remaining_bits + (bit_per_index - remaining_bits % bit_per_index) % bit_per_index) / bit_per_index):
@@ -34,6 +44,12 @@ def decodeBlockstateArray(array):
     return return_value
 
 def encodeBlockstateArray(array):
+
+    def sequence_shift(num):
+        num -= 1
+        for i in xrange(5):
+            num |= num >> (1 << i)
+        return num + 1
     return_value = [0] * 4096
     bit_per_index = max(4, 6)
 
@@ -139,6 +155,52 @@ class Blockstate(object):
         #if string in cls._block_state_map:
         #    return cls._block_state_map[string]
         #return cls()
+
+class BlockstateLevel(object):
+
+    def __init__(self, path):
+        self.path = path
+        self.players = []
+        self.player_cache = {}
+
+        self.initTime = -1
+        self.lockAcquireFuncs = []
+        self.acquireSessionLock()
+
+        self._loadedChunks = None # TODO
+        self._loadedChunkData = {}
+        self.recentChunks = collections.deque(maxlen=20)
+        self.chunkNeedingLighting = set()
+        self._allChunks = None
+        self.dimensions = {}
+
+        self.loadLevelDat()
+
+        self.loadPlayers()
+
+        self.preloadDimensions()
+
+    def acquireSessionLock(self):
+        lock_file = os.path.join(self.path, 'session.lock')
+        self.initTime = int(time.time() * 1000)
+        with open(lock_file, "wb") as f:
+            f.write(struct.pack(">q", self.initTime))
+            f.flush()
+            os.fsync(f.fileno())
+
+        for func in self.lockAcquireFuncs:
+            func()
+
+    def loadLevelDat(self):
+        self.root_tag = nbt.load(os.path.join(self.path, 'level.dat'))
+
+        raise NotImplementedError()
+
+    def loadPlayers(self):
+        raise NotImplementedError()
+
+    def preloadDimensions(self):
+        raise NotImplementedError()
 
 class BlockstateRegionFile(object):
 
@@ -376,11 +438,33 @@ class BlockstateChunkSection(object):
 class BlockstateMaterials(object):
 
     def __init__(self):
-        self.blockstates = []
+        self.blockstates = [Blockstate(), ]
         self.load()
 
     def load(self):
-        raise NotImplementedError()
+        for f in glob.glob(os.path.join('blockstates', '*.json')):
+            name = os.path.basename(f).replace('.json', '')
+            fp = open(f)
+            block_json = json.load(fp)
+            fp.close()
+            if 'multipart' in block_json: # TODO: Add support for multipart blocks
+                continue
+            blockstates = block_json['variants'].keys()
+            for blockstate in blockstates:
+                if blockstate == 'normal':
+                    self.blockstates.append(Blockstate(basename=name))
+                    continue
+                elif blockstate == 'map':
+                    continue
+                serialized_props = blockstate.split(',')
+                props = {}
+                for prop in serialized_props:
+                    key, value = prop.split('=')
+                    props[key] = value
+                #for prop in serialized_props:
+
+                self.blockstates.append(Blockstate(basename=name, properties=props))
+
 
     def __getitem__(self, item):
         if isinstance(item, int):
@@ -393,6 +477,19 @@ class BlockstateMaterials(object):
             return NotImplementedError()
         return None
 
+def identify(directory):
+    if not (os.path.exists(os.path.join(directory, 'region')) or os.path.exists(os.path.join(directory, 'playerdata'))):
+        return False
+    if not (os.path.exists(os.path.join(directory, 'DIM1')) or os.path.exists(os.path.join(directory, 'DIM-1'))):
+        return False
+    if not (os.path.exists(os.path.join(directory, 'data')) or os.path.exists(os.path.join(directory, 'level.dat'))):
+        return False
+    root = nbt.load(os.path.join(directory, 'level.dat'))
+    if 'FML' in root:
+        return False
+    if root.get('Data', nbt.TAG_Compound()).get('Version', nbt.TAG_Compound()).get('Id', nbt.TAG_Int(-1)).value < 1451:
+        return False
+    return True
 
 if __name__ == '__main__':
     obj = BlockstateRegionFile('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World\\region\\r.0.0.mca')
@@ -415,6 +512,10 @@ if __name__ == '__main__':
     print(chunk._total_palette)
     print('===')
     print(chunk2._total_palette)
+    mats = BlockstateMaterials()
+    print(mats['minecraft:air'])
+    print(mats[0])
+    print(mats['minecraft:grass_block[snowy=true]'])
     #print(chunk.Sections)
     #print(chunk.Sections[0]._block_states)
     #print(chunk.Sections[0].blocks[0,0,0])

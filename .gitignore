@@ -1,6 +1,8 @@
 # Directories
 .idea/
 rendering/
+blockstates/
+mcver/
 
 # Files
 *.py[cod]
