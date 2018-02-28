@@ -24,19 +24,19 @@ VERSION_DEFLATE = 2
 def decodeBlockstateArray(array):
     return_value = [0] * 4096
     bit_per_index = len(array) * 64 / 4096
-    print('Bit per Index', bit_per_index)
+    #print('Bit per Index', bit_per_index)
     current_reference_index = 0
 
     for i in xrange(len(array)):
         current = array[i]
 
         overhang = (bit_per_index - (64 * i) % bit_per_index) % bit_per_index
-        print('Overhang', overhang)
+        #print('Overhang', overhang)
         if overhang > 0:
             return_value[current_reference_index - 1] |= current % ((1 << overhang) << (bit_per_index - overhang))
         current >>= overhang
-        print('Current', current)
-        print('Curr', current >> overhang)
+        #print('Current', current)
+        #print('Curr', current >> overhang)
 
         remaining_bits = 64 - overhang
         for j in xrange((remaining_bits + (bit_per_index - remaining_bits % bit_per_index) % bit_per_index) / bit_per_index):
@@ -200,6 +200,36 @@ class BlockstateLevel(object):
         self.recentChunks.append(chunk)
         return chunk
 
+    def heightMapAt(self, x, z):
+        cx = x >> 4
+        cz = z >> 4
+        xInChunk = x & 0xf
+        zInChunk = z & 0xf
+
+        chunk = self.getChunk(cx, cz)
+
+        return chunk.HeightMap[zInChunk, xInChunk]
+
+    def biomeAt(self, x, z):
+        cx = x >> 4
+        cz = z >> 4
+        xInChunk = x & 0xf
+        zInChunk = z & 0xf
+
+        chunk = self.getChunk(cx, cz)
+
+        return int(chunk.Biomes[(z - zInChunk) * 16 + (x - xInChunk)])
+
+    def setBiomeAt(self, x, z, biomeID):
+        cx = x >> 4
+        cz = z >> 4
+        xInChunk = x & 0xf
+        zInChunk = z & 0xf
+
+        chunk = self.getChunk(cx, cz)
+        chunk.Biomes[(z - zInChunk) * 16 + (x - xInChunk)] = biomeID
+
+
 
 class BlockstateRegionFile(object):
 
@@ -324,7 +354,9 @@ class BlockstateChunk(object):
         self._tile_entities = [te for te in nbt_data['Level']['TileEntities']]
         self._tile_ticks = [tt for tt in nbt_data['Level'].get('TileTicks', [])]
         self._biomes = nbt_data['Level']['Biomes'].value
+        #self._biomes = np.reshape(self._biomes, (16,16)) TODO: Enable if Biomes can be read as a 2D array
         self._height_map = nbt_data['Level']['HeightMap'].value
+        self._height_map = np.reshape(self._height_map, (16,16))
         self._sections = {}
         self._blocks = np.full((16,255,16), self.world.materials['minecraft:air'], dtype=Blockstate)
         self._total_palette = []

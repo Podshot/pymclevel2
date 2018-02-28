@@ -3,10 +3,16 @@ import os
 
 import anvil2
 
+class AttributeHolder(object):
+    pass
+
 class TestChunk(unittest.TestCase):
 
     def setUp(self):
-        self.region = anvil2.BlockstateRegionFile(os.path.join('1.13 World', 'region', 'r.0.0.mca'))
+        world = AttributeHolder()
+        world.materials = anvil2.BlockstateMaterials()
+        #setattr(world, 'materials', anvil2.BlockstateMaterials())
+        self.region = anvil2.BlockstateRegionFile(world, os.path.join('1.13 World', 'region', 'r.0.0.mca'))
 
         self.chunk = self.region.getChunk(0,0)
 
@@ -25,6 +31,21 @@ class TestChunk(unittest.TestCase):
     def test_modification(self):
         self.chunk.Blocks[1,10,1] = 'minecraft:gold_block'
         self.assertEqual(self.chunk.Blocks[1,10,1], 'minecraft:gold_block')
+
+class TestWorld(unittest.TestCase):
+
+    def setUp(self):
+        self.world = anvil2.BlockstateLevel(os.path.join('1.13 World'))
+
+    def test_types(self):
+        self.assertIsInstance(self.world.getChunk(0,0), anvil2.BlockstateChunk)
+        self.assertIsInstance(self.world.getRegionForChunk(0,0), anvil2.BlockstateRegionFile)
+
+    def test_heightmap(self):
+        self.assertEqual(self.world.heightMapAt(0,0), 4)
+
+    def test_biome(self):
+        self.assertEqual(self.world.biomeAt(0,0), 1)
 
 '''
 class TestSections(unittest.TestCase):
@@ -60,6 +81,7 @@ class TestSections(unittest.TestCase):
 def setup_suite():
     test_suite = unittest.TestSuite()
     test_suite.addTest(unittest.makeSuite(TestChunk))
+    test_suite.addTest(unittest.makeSuite(TestWorld))
     #test_suite.addTest(unittest.makeSuite(TestSections))
     return test_suite
 
