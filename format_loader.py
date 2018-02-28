@@ -67,4 +67,7 @@ def load_world(world_directory):
 
 loader = _FormatLoader('.')
 #print(load_world('C:\\Users\\gotharbg\\Documents\\MC Worlds\\MCEdit Test World'))
-#print(load_world('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World'))
+print(load_world('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World'))
+world = load_world('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World')
+chunk = world.getChunk(0,0)
+print(chunk.Blocks)

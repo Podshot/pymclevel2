@@ -1,14 +1,14 @@
 from __future__ import unicode_literals, print_function
 
 import collections
-import json
 import os
 import struct
+import weakref
 import zlib
 from uuid import UUID
 
 import numpy as np
-import cPickle
+from materials import BlockstateMaterials, Blockstate
 import glob
 
 import time
@@ -71,109 +71,6 @@ def TagProperty(tagName, tagType, default_or_func=None):
 
     return property(getter, setter)
 
-class Blockstate(object):
-
-   # _block_state_map = {}
-    __comp_attributes = ('_resource_location', '_basename', '_properties')
-
-    def __init__(self, resource_location='minecraft', basename='air', properties=None):
-        self._resource_location = resource_location
-        self._basename = basename
-        if properties:
-            self._properties = properties
-        else:
-            self._properties = properties = {}
-        self._str = Blockstate.__buildStr(resource_location, basename, properties)
-        #self._block_state_map[self._str] = self
-
-    def __repr__(self):
-        return self._str
-
-    def __eq__(self, other):
-        if isinstance(other, Blockstate):
-            result = True
-            for attr in self.__comp_attributes:
-                result = result and getattr(other, attr) == getattr(self, attr)
-            return result
-        elif isinstance(other, (str, unicode)):
-            return other == self._str
-        else:
-            return NotImplemented
-
-    def __ne__(self, other):
-        result = self.__eq__(other)
-        if result is NotImplemented:
-            return result
-        return not result
-
-    def toNBT(self):
-        root = nbt.TAG_Compound()
-        root['Name'] = nbt.TAG_String('{}:{}'.format(self._resource_location, self._basename))
-        if self._properties:
-            props = nbt.TAG_Compound()
-            for (key, value) in self._properties.iteritems():
-                props[key] = nbt.TAG_String(value)
-            root['Properties'] = props
-        return root
-
-
-    @staticmethod
-    def __buildStr(resource_location, basename, properties):
-        _str = '{}:{}'.format(resource_location, basename)
-        if properties:
-            _str += '['
-            for (key, value) in properties.iteritems():
-                _str += '{}={},'.format(key, value)
-            _str = _str[:-1] + ']'
-        return _str
-
-    @staticmethod
-    def __decompStr(string):
-        seperated = string.split("[")
-
-        if len(seperated) == 1:
-            if not seperated[0].startswith("minecraft:"):
-                seperated[0] = "minecraft:" + seperated[0]
-            return seperated[0], {}
-
-        name, props = seperated
-
-        if not name.startswith("minecraft:"):
-            name = "minecraft:" + name
-
-        properties = {}
-
-        props = props[:-1]
-        props = props.split(",")
-        for prop in props:
-            prop = prop.split("=")
-            properties[prop[0]] = prop[1]
-        return name, properties
-
-    @classmethod
-    def getBlockstateFromNBT(cls, nbt_data):
-        resource, base = nbt_data['Name'].value.split(':')
-        props = {key:value.value for (key, value) in nbt_data.get('Properties', {}).iteritems()}
-        built = Blockstate.__buildStr(resource, base, props)
-        #if built in cls._block_state_map:
-        #    return cls._block_state_map[built]
-        return cls(resource, base, props)
-
-    @classmethod
-    def getBlockstateFromData(cls, resource='minecraft', basename='air', properties=None):
-        if not properties:
-            properties = {}
-        built = Blockstate.__buildStr(resource, basename, properties)
-        #if built in cls._block_state_map:
-        #    return cls._block_state_map[built]
-        return cls(resource, basename, properties)
-
-    #@classmethod
-    #def getBlockstateFromStr(cls, string):
-        #if string in cls._block_state_map:
-        #    return cls._block_state_map[string]
-        #return cls()
-
 class BlockstateLevel(object):
 
     SizeOnDisk = TagProperty('SizeOneDick', nbt.TAG_Long, 0)
@@ -195,12 +92,15 @@ class BlockstateLevel(object):
         self.lockAcquireFuncs = []
         self.acquireSessionLock()
 
-        self._loadedChunks = None # TODO
+        self._materials = BlockstateMaterials()
+
+        self._loadedChunks = weakref.WeakValueDictionary()
         self._loadedChunkData = {}
         self.recentChunks = collections.deque(maxlen=20)
         self.chunkNeedingLighting = set()
         self._allChunks = None
         self.dimensions = {}
+        self.regionFiles = {}
 
         self.loadLevelDat()
 
@@ -208,13 +108,17 @@ class BlockstateLevel(object):
 
         self.preloadDimensions()
 
-    @classmethod
-    def gamePlatform(cls):
+    @property
+    def gamePlatform(self):
         return 'Java'
 
-    @classmethod
-    def levelFormat(cls):
+    @property
+    def levelFormat(self):
         return 'anvil2'
+
+    @property
+    def materials(self):
+        return self._materials
 
     def acquireSessionLock(self):
         lock_file = os.path.join(self.path, 'session.lock')
@@ -242,14 +146,68 @@ class BlockstateLevel(object):
                 self.players.append(p)
 
     def preloadDimensions(self):
-        raise NotImplementedError()
+        dimensions = glob.glob(os.path.join(self.path, 'DIM*', ''))
+        for dimension in dimensions:
+            try:
+                dimNum = int(os.path.basename(os.path.dirname(dimension))[3:])
+                #dim = BedrockDimension(self, dimNum) # TODO: Create dimension
+                dim = None
+                self.dimensions[dimNum] = dim
+            except Exception as e:
+                pass
+
+    def dirhash(self, n):
+        return self.dirhashes[n % 64]
+
+    def _dirhash(self):
+        n = self
+        n %= 64
+        s = u""
+        if n >= 36:
+            s += u"1"
+            n -= 36
+        s += u"0123456789abcdefghijklmnopqrstuvwxyz"[n]
+
+        return s
+
+    dirhashes = [_dirhash(n) for n in xrange(64)]
+
+    def getRegionForChunk(self, cx, cz):
+        """
+        :return: The region for the chunk
+        :rtype: BlockstateRegionFile
+        """
+        rx = cx >> 5
+        rz = cz >> 5
+        return self.getRegionFile(rx, rz)
+
+    def getRegionFile(self, rx, rz):
+        region = self.regionFiles.get((rx, rz))
+        if region:
+            return region
+        region = BlockstateRegionFile(self, os.path.join(self.path, 'region', 'r.{}.{}.mca'.format(rx, rz)))
+        self.regionFiles[rx, rz] = region
+        return region
+
+    def getChunk(self, cx, cz):
+        chunk = self._loadedChunks.get((cx,cz))
+        if chunk:
+            return chunk
+        region = self.getRegionForChunk(cx,cz)
+        chunk = region.getChunk(cx,cz)
+
+        self._loadedChunks[cx, cz] = chunk
+        self.recentChunks.append(chunk)
+        return chunk
+
 
 class BlockstateRegionFile(object):
 
     length_struct = struct.Struct('>I')
     format_struct = struct.Struct('B')
 
-    def __init__(self, path):
+    def __init__(self, world, path):
+        self.world = world
         self._path = path
         self._chunks = {}
         self._free_sectors = []
@@ -260,13 +218,14 @@ class BlockstateRegionFile(object):
         self.load()
 
     def getChunk(self, cx, cz):
-        if (cx, cz) in self._chunks:
-            return self._chunks[cx, cz]
-        else:
-            chunk = self._getChunkFromFile(cx, cz)
-            if chunk:
-                self._chunks[cx, cz] = chunk
-            return chunk
+        #if (cx, cz) in self._chunks:
+        #    return self._chunks[cx, cz]
+        #else:
+        #    chunk = self._getChunkFromFile(cx, cz)
+        #    if chunk:
+        #        self._chunks[cx, cz] = chunk
+        #    return chunk
+        return self._getChunkFromFile(cx, cz)
 
 
     def _getChunkFromFile(self, cx, cz):
@@ -312,7 +271,7 @@ class BlockstateRegionFile(object):
             readable_data = zlib.decompress(data)
 
         fp.close()
-        return BlockstateChunk(nbt.load(buf=readable_data))
+        return BlockstateChunk(self.world, nbt.load(buf=readable_data))
 
 
     def load(self):
@@ -357,7 +316,8 @@ class BlockstateRegionFile(object):
 
 class BlockstateChunk(object):
 
-    def __init__(self, nbt_data):
+    def __init__(self, world, nbt_data):
+        self.world = world
         self.cx, self.cz = nbt_data['Level']['xPos'].value, nbt_data['Level']['zPos'].value
         self._data_version = nbt_data['DataVersion'].value
         self._entities = [e for e in nbt_data['Level']['Entities']]
@@ -366,7 +326,7 @@ class BlockstateChunk(object):
         self._biomes = nbt_data['Level']['Biomes'].value
         self._height_map = nbt_data['Level']['HeightMap'].value
         self._sections = {}
-        self._blocks = np.zeros((16,255,16), dtype=Blockstate)
+        self._blocks = np.full((16,255,16), self.world.materials['minecraft:air'], dtype=Blockstate)
         self._total_palette = []
         for section in nbt_data['Level']['Sections']:
             sect = BlockstateChunkSection(self, section)
@@ -477,48 +437,6 @@ class BlockstateChunkSection(object):
     def __getBlocks(self, pos):
         return pos
 
-class BlockstateMaterials(object):
-
-    def __init__(self):
-        self.blockstates = [Blockstate(), ]
-        self.load()
-
-    def load(self):
-        for f in glob.glob(os.path.join('blockstates', '*.json')):
-            name = os.path.basename(f).replace('.json', '')
-            fp = open(f)
-            block_json = json.load(fp)
-            fp.close()
-            if 'multipart' in block_json: # TODO: Add support for multipart blocks
-                continue
-            blockstates = block_json['variants'].keys()
-            for blockstate in blockstates:
-                if blockstate == 'normal':
-                    self.blockstates.append(Blockstate(basename=name))
-                    continue
-                elif blockstate == 'map':
-                    continue
-                serialized_props = blockstate.split(',')
-                props = {}
-                for prop in serialized_props:
-                    key, value = prop.split('=')
-                    props[key] = value
-                #for prop in serialized_props:
-
-                self.blockstates.append(Blockstate(basename=name, properties=props))
-
-
-    def __getitem__(self, item):
-        if isinstance(item, int):
-            return self.blockstates[item]
-        elif isinstance(item, (str, unicode)):
-            for blockstate in self.blockstates:
-                if blockstate == item:
-                    return blockstate
-        elif isinstance(item, nbt.TAG_Compound):
-            return NotImplementedError()
-        return None
-
 def identify(directory):
     if not (os.path.exists(os.path.join(directory, 'region')) or os.path.exists(os.path.join(directory, 'playerdata'))):
         return False
@@ -537,46 +455,24 @@ if __name__ == '__main__':
     obj = BlockstateRegionFile('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World\\region\\r.0.0.mca')
     obj2 = BlockstateRegionFile('C:\\Users\\gotharbg\\Downloads\\Podshot 1_13 Snapshot\\region\\r.0.0.mca')
 
-    chunk = obj.getChunk(0,0)
+    #chunk = obj.getChunk(0,0)
     #print(chunk.Blocks[0,3,0])
     #print(chunk.TileEntities)
-    chunk.TileEntities.append({'test': 'value'})
-    chunk2 = obj2.getChunk(0,0)
+    #chunk.TileEntities.append({'test': 'value'})
+    #chunk2 = obj2.getChunk(0,0)
     #print(chunk.TileEntities)
-    for i in xrange(16):
-        print(chunk.Blocks[:,i,1])
+    #for i in xrange(16):
+    #    print(chunk.Blocks[:,i,1])
 
-    chunk.Blocks[1,0,1] = Blockstate.getBlockstateFromData('mod', 'mod_block')
-    print(chunk.Blocks[1,0,1])
-    no_block = Blockstate.getBlockstateFromData('minecraft', 'sponge')
-    print(no_block in chunk.Blocks)
-    print('minecraft:air' in chunk.Blocks)
-    print(chunk._total_palette)
-    print('===')
-    print(chunk2._total_palette)
-    mats = BlockstateMaterials()
-    print(mats['minecraft:air'])
-    print(mats[0])
-    print(mats['minecraft:grass_block[snowy=true]'])
-    #print(chunk.Sections)
-    #print(chunk.Sections[0]._block_states)
-    #print(chunk.Sections[0].blocks[0,0,0])
-    #chunk.Sections[0].blocks[0,0,0] = 10
-    #print(chunk.Sections[0].palette[0])
-    #print(chunk.Sections[0].palette['minecraft:dirt'])
-    #print('Block:', chunk.Blocks[0,0,0])
-    #print('Type', type(chunk.Sections[0].blocks[0,0,0]))
-    #print('Block:', chunk.Blocks[0,16,0])
-    #print('Slices:', chunk.Blocks[::2, ::2, :64])
-
-    fp = open('text.cPickle', 'rb')
-    data = cPickle.load(fp)
-    fp.close()
-    result = np.append(data, chunk.Sections[0]._block_states)
-    result = result.reshape((16, 32, 16))
-    #print(result.shape)
-    #print(result[0,0,0])
-    #print(result[0,15,0])
-    #print(chunk.Sections[0].blocks[0,0,0] == chunk.Blocks[0,1,0])
-    #print(chunk.Sections[0].blocks[0,0,0] == 'minecraft:bedrock')
-#print(Blockstate.getBlockstate())
+    #chunk.Blocks[1,0,1] = Blockstate.getBlockstateFromData('mod', 'mod_block')
+    #print(chunk.Blocks[1,0,1])
+    #no_block = Blockstate.getBlockstateFromData('minecraft', 'sponge')
+    #print(no_block in chunk.Blocks)
+    #print('minecraft:air' in chunk.Blocks)
+    #print(chunk._total_palette)
+    #print('===')
+    #print(chunk2._total_palette)
+    #mats = BlockstateMaterials()
+    #print(mats['minecraft:air'])
+    #print(mats[0])
+    #print(mats['minecraft:grass_block[snowy=true]'])
