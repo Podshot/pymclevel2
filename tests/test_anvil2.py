@@ -27,7 +27,6 @@ class TestChunk(unittest.TestCase):
     def test_blocks(self):
         self.assertEqual(self.chunk.Blocks[0,0,0], 'minecraft:bedrock')
 
-    @unittest.expectedFailure
     def test_modification(self):
         self.chunk.Blocks[1,10,1] = 'minecraft:gold_block'
         self.assertEqual(self.chunk.Blocks[1,10,1], 'minecraft:gold_block')
@@ -41,12 +40,17 @@ class TestWorld(unittest.TestCase):
         self.assertIsInstance(self.world.getChunk(0,0), anvil2.BlockstateChunk)
         self.assertIsInstance(self.world.getRegionForChunk(0,0), anvil2.BlockstateRegionFile)
 
+    def test_identify(self):
+        self.assertTrue(anvil2.identify(os.path.join('1.13 World')))
+
+    def test_version(self):
+        self.assertEqual(self.world.gameVersion, '17w50a')
+
     def test_heightmap(self):
         self.assertEqual(self.world.heightMapAt(0,0), 4)
 
     def test_biome(self):
         self.assertEqual(self.world.biomeAt(0,0), 1)
-
 '''
 class TestSections(unittest.TestCase):
 

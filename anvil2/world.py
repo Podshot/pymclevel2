@@ -7,10 +7,11 @@ import weakref
 import zlib
 from uuid import UUID
 
+import math
 import numpy as np
 from materials import BlockstateMaterials, Blockstate
 import glob
-
+import api
 import time
 
 import nbt
@@ -55,36 +56,20 @@ def encodeBlockstateArray(array):
     return_value = [0] * 4096
     bit_per_index = max(4, 6)
 
-def TagProperty(tagName, tagType, default_or_func=None):
-    def getter(self):
-        if tagName not in self.root_tag["Data"]:
-            if hasattr(default_or_func, "__call__"):
-                default = default_or_func(self)
-            else:
-                default = default_or_func
+class BlockstateWorld(api.World):
 
-            self.root_tag["Data"][tagName] = tagType(default)
-        return self.root_tag["Data"][tagName].value
-
-    def setter(self, val):
-        self.root_tag["Data"][tagName] = tagType(value=val)
-
-    return property(getter, setter)
-
-class BlockstateLevel(object):
-
-    SizeOnDisk = TagProperty('SizeOneDick', nbt.TAG_Long, 0)
-    RandomSeed = TagProperty('RandomSeed', nbt.TAG_Long, 0)
-    Time = TagProperty('Time', nbt.TAG_Long, 0)
-    DayTime = TagProperty('DayTime', nbt.TAG_Long, 0)
-    LastPlayed = TagProperty('LastPlayed', nbt.TAG_Long, lambda self: long(time.time() * 1000))
-    LevelName = TagProperty('LevelName', nbt.TAG_String, lambda self: self.displayName)
-    GeneratorName = TagProperty('generatorName', nbt.TAG_String, 'default')
-    MapFeatures = TagProperty('MapFeatures', nbt.TAG_Byte, 1)
-    GameType = TagProperty('GameType', nbt.TAG_Int, 0)
+    SizeOnDisk = api.TagProperty('SizeOneDick', nbt.TAG_Long, 0)
+    RandomSeed = api.TagProperty('RandomSeed', nbt.TAG_Long, 0)
+    Time = api.TagProperty('Time', nbt.TAG_Long, 0)
+    DayTime = api.TagProperty('DayTime', nbt.TAG_Long, 0)
+    LastPlayed = api.TagProperty('LastPlayed', nbt.TAG_Long, lambda self: long(time.time() * 1000))
+    LevelName = api.TagProperty('LevelName', nbt.TAG_String, lambda self: self.displayName)
+    GeneratorName = api.TagProperty('generatorName', nbt.TAG_String, 'default')
+    MapFeatures = api.TagProperty('MapFeatures', nbt.TAG_Byte, 1)
+    GameType = api.TagProperty('GameType', nbt.TAG_Int, 0)
 
     def __init__(self, path):
-        self.path = path
+        super(BlockstateWorld, self).__init__(path)
         self.players = []
         self.player_cache = {}
 
@@ -229,17 +214,56 @@ class BlockstateLevel(object):
         chunk = self.getChunk(cx, cz)
         chunk.Biomes[(z - zInChunk) * 16 + (x - xInChunk)] = biomeID
 
+    def addEntity(self, tag):
+        if isinstance(tag, nbt.TAG_Compound):
+            x, y, z = tag['Pos'][0].value, tag['Pos'][1].value, tag['Pos'][2].value
+            x, y, z = map(lambda i: int(math.floor(i)), (x, y, z))
+            cx = x >> 4
+            cz = z >> 4
 
+            chunk = self.getChunk(cx, cz)
+            chunk.addEntity(tag)
+            chunk.dirty = True
+        else:
+            raise ValueError('Entity tag must be a TAG_Compound')
 
-class BlockstateRegionFile(object):
+    def tileEntityAt(self, x, y, z):
+        cx = x >> 4
+        cz = z >> 4
+        chunk = self.getChunk(cx, cz)
+        return chunk.tileEntityAt(x, y, z)
+
+    def addTileEntity(self, tag):
+        if isinstance(tag, nbt.TAG_Compound):
+            x, y, z = tag['x'].value, tag['y'].value, tag['z'].value
+            cx = x >> 4
+            cz = z >> 4
+
+            chunk = self.getChunk(cx, cz)
+            chunk.addTileEntity(tag)
+            chunk.dirty = True
+        else:
+            raise ValueError('Tile Entity tag must be a TAG_Compound')
+
+    def addTileTick(self, tag):
+        if isinstance(tag, nbt.TAG_Compound):
+            x, y, z = tag['x'].value, tag['y'].value, tag['z'].value
+            cx = x >> 4
+            cz = z >> 4
+
+            chunk = self.getChunk(cx, cz)
+            chunk.addTileTick(tag)
+            chunk.dirty = True
+        else:
+            raise ValueError('Tile Tick tag must be a TAG_Compound')
+
+class BlockstateRegionFile(api.RegionFile):
 
     length_struct = struct.Struct('>I')
     format_struct = struct.Struct('B')
 
     def __init__(self, world, path):
-        self.world = world
-        self._path = path
-        self._chunks = {}
+        super(BlockstateRegionFile, self).__init__(world, path)
         self._free_sectors = []
         self._offsets = None
         self._modification_times = None
@@ -344,10 +368,10 @@ class BlockstateRegionFile(object):
 
         fp.close()
 
-class BlockstateChunk(object):
+class BlockstateChunk(api.Chunk):
 
     def __init__(self, world, nbt_data):
-        self.world = world
+        super(BlockstateChunk, self).__init__(world, nbt_data)
         self.cx, self.cz = nbt_data['Level']['xPos'].value, nbt_data['Level']['zPos'].value
         self._data_version = nbt_data['DataVersion'].value
         self._entities = [e for e in nbt_data['Level']['Entities']]
@@ -405,10 +429,6 @@ class BlockstateChunk(object):
 
     @property
     def Blocks(self):
-        return self._blocks
-
-    @Blocks.getter
-    def get_Blocks(self):
         return self._blocks
 
 class BlockstateChunkSection(object):

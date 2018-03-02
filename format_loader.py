@@ -18,7 +18,7 @@ class _FormatLoader(object):
         'identify'
     ]
 
-    def __init__(self, search_directory):
+    def __init__(self, search_directory='.'):
         self.search_directory = search_directory
 
         self._find_formats()
@@ -33,7 +33,6 @@ class _FormatLoader(object):
             success, module = self.load_format(format_name)
             if success:
                 _formats[format_name] = module
-        print(_formats)
 
     def load_format(self, directory):
         try:
@@ -65,11 +64,10 @@ def load_world(world_directory):
             return format_module.LEVEL_CLASS(world_directory)
     return None
 
-loader = _FormatLoader('.')
-#print(load_world('C:\\Users\\gotharbg\\Documents\\MC Worlds\\MCEdit Test World'))
-print(load_world('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World'))
-world = load_world('C:\\Users\\gotharbg\\Documents\\MC Worlds\\1.13 World')
-chunk = world.getChunk(0,0)
-#print(chunk.Blocks)
-print(world.heightMapAt(0,0))
-print(world.biomeAt(0,0))
+loader = _FormatLoader()
+
+if __name__ == '__main__':
+    world = load_world(os.path.join('tests', '1.13 World'))
+    chunk = world.getChunk(0,0)
+    print(world.heightMapAt(0,0))
+    print(world.biomeAt(0,0))
