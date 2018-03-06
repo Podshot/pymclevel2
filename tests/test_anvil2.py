@@ -34,7 +34,7 @@ class TestChunk(unittest.TestCase):
 class TestWorld(unittest.TestCase):
 
     def setUp(self):
-        self.world = anvil2.BlockstateLevel(os.path.join('1.13 World'))
+        self.world = anvil2.BlockstateWorld(os.path.join('1.13 World'))
 
     def test_types(self):
         self.assertIsInstance(self.world.getChunk(0,0), anvil2.BlockstateChunk)

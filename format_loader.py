@@ -71,3 +71,4 @@ if __name__ == '__main__':
     chunk = world.getChunk(0,0)
     print(world.heightMapAt(0,0))
     print(world.biomeAt(0,0))
+    world.preloadChunks()
