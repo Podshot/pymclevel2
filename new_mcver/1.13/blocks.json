@@ -1,0 +1,14 @@
+{
+  "depends_on": "1.12",
+  "minecraft": {
+    "stone": {
+      "id": 1,
+      "properties": []
+    },
+    "granite": {
+      "id": 1,
+      "<data>": 0,
+      "properties": []
+    }
+  }
+}

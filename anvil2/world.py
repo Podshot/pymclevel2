@@ -636,6 +636,10 @@ class BlockstateChunk(api.Chunk):
         self.region.saveChunk(self.cx, self.cz, root.save(compressed=False))
 
     @property
+    def nbt(self):
+        return self._nbt['Level']
+
+    @property
     def HeightMap(self):
         return self._height_map
 

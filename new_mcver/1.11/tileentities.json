@@ -1,0 +1,100 @@
+{
+   "minecraft":{
+      "banner":{
+         "id":"banner",
+         "name":"Banner"
+      },
+      "beacon":{
+         "id":"beacon",
+         "name":"Beacon"
+      },
+      "brewing_stand":{
+         "id":"brewing_stand",
+         "name":"Brewing Stand"
+      },
+      "cauldron":{
+         "id":"cauldron",
+         "name":"Cauldron"
+      },
+      "chest":{
+         "id":"chest",
+         "name":"Chest"
+      },
+      "command_block":{
+         "id":"command_block",
+         "name":"Command Block"
+      },
+      "comparator":{
+         "id":"comparator",
+         "name":"Comparator"
+      },
+      "daylight_detector":{
+         "id":"daylight_detector",
+         "name":"Daylight Sensor"
+      },
+      "dispenser":{
+         "id":"dispenser",
+         "name":"Dispenser"
+      },
+      "dropper":{
+         "id":"dropper",
+         "name":"Dropper"
+      },
+      "enchanting_table":{
+         "id":"enchanting_table",
+         "name":"Enchantment Table"
+      },
+      "end_gateway":{
+         "id":"end_gateway",
+         "name":"End Gateway"
+      },
+      "end_portal":{
+         "id":"end_portal",
+         "name":"End Portal"
+      },
+      "ender_chest":{
+         "id":"ender_chest",
+         "name":"Ender Chest"
+      },
+      "flower_pot":{
+         "id":"flower_pot",
+         "name":"Flower Pot"
+      },
+      "furnace":{
+         "id":"furnace",
+         "name":"Frunace"
+      },
+      "hopper":{
+         "id":"hopper",
+         "name":"Hopper"
+      },
+      "jukebox":{
+         "id":"jukebox",
+         "name":"Jukebox"
+      },
+      "mob_spawner":{
+         "id":"mob_spawner",
+         "name":"Monster Spawner"
+      },
+      "noteblock":{
+         "id":"noteblock",
+         "name":"Note Block"
+      },
+      "piston":{
+         "id":"piston",
+         "name":"Piston Moving"
+      },
+      "sign":{
+         "id":"sign",
+         "name":"Sign"
+      },
+      "skull":{
+         "id":"skull",
+         "name":"Mob Head"
+      },
+      "structure_block":{
+         "id":"structure_block",
+         "name":"Structure Block"
+      }
+   }
+}

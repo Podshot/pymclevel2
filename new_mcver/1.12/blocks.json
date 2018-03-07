@@ -1,0 +1,17 @@
+{
+  "depends_on": "1.11.2",
+  "minecraft": {
+    "concrete": {
+      "id": 251,
+      "properties": [
+        {
+          "<data>": 0,
+          "color": "white"
+        },{
+          "<data>": 1,
+          "color": "orange"
+        }
+      ]
+    }
+  }
+}

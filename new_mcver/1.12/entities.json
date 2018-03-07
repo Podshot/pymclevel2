@@ -1,0 +1,15 @@
+{
+  "depends_on": "1.11.2",
+  "minecraft": {
+    "illusion_illager": {
+      "type": "Hostile mobs",
+      "id": 37,
+      "name": "Illusion Illager"
+    },
+    "parrot": {
+      "type": "Passive mobs",
+      "id": 105,
+      "name": "Parrot"
+    }
+  }
+}
